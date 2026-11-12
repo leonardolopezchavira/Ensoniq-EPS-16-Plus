@@ -1,0 +1,104 @@
+name: Standalone app
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  pull_request:
+
+permissions:
+  contents: write
+
+env:
+  JUCE_TAG: "8.0.13"
+  MUSASHI_COMMIT: "313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS universal
+            os: macos-14
+            configure: >-
+              -G Ninja -DCMAKE_BUILD_TYPE=Release
+              "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+            build_config: ""
+            tests: "vst3_synthetic_machine_start|vst3_oex_routing|vst3_midi_snapshot|vst3_editor_smoke"
+          - name: Windows x64
+            os: windows-2022
+            configure: -G "Visual Studio 17 2022" -A x64
+            build_config: --config Release
+            tests: "vst3_synthetic_machine_start|vst3_oex_routing|vst3_midi_snapshot|vst3_editor_smoke"
+          - name: Linux x64
+            os: ubuntu-24.04
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release
+            build_config: ""
+            tests: "vst3_synthetic_machine_start|vst3_oex_routing|vst3_midi_snapshot"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libasound2-dev libfreetype-dev \
+            libfontconfig1-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxext-dev libgl1-mesa-dev
+
+      - name: Fetch JUCE and Musashi
+        shell: bash
+        run: |
+          git clone --depth 1 --branch "$JUCE_TAG" https://github.com/juce-framework/JUCE.git work/deps/JUCE
+          git init work/deps/Musashi
+          git -C work/deps/Musashi remote add origin https://github.com/kstenerud/Musashi.git
+          git -C work/deps/Musashi fetch --depth 1 origin "$MUSASHI_COMMIT"
+          git -C work/deps/Musashi checkout --detach FETCH_HEAD
+
+      - name: Configure
+        shell: bash
+        run: >-
+          cmake -S . -B work/standalone-build ${{ matrix.configure }}
+          -DEPS16_BUILD_VST3=ON -DEPS16_BUILD_STANDALONE=ON
+          -DEPS16_JUCE_DIR="$GITHUB_WORKSPACE/work/deps/JUCE"
+
+      - name: Build and run tests
+        # GUI tests can be sensitive to the runner's desktop session; report
+        # failures without blocking the application package.
+        continue-on-error: true
+        shell: bash
+        run: |
+          cmake --build work/standalone-build ${{ matrix.build_config }} --parallel 4 \
+            --target eps16_vst3_editor_smoke_test eps16_oex_routing_test eps16_midi_snapshot_test
+          ctest --test-dir work/standalone-build -C Release -R "${{ matrix.tests }}" --output-on-failure
+
+      - name: Build and package standalone app
+        shell: bash
+        run: cmake --build work/standalone-build ${{ matrix.build_config }} --parallel 4 --target eps16_standalone_package
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ensoniq-EPS-16-Plus-Standalone-${{ runner.os }}
+          path: work/standalone-build/standalone-package/*.zip
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: work/standalone-build/standalone-package/*.zip

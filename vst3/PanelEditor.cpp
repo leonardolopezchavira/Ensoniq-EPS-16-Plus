@@ -1073,9 +1073,16 @@ bool Eps16PanelEditor::updateArrowKey(int keyCode, bool isDown) {
 bool Eps16PanelEditor::keyPressed(const juce::KeyPress &key) {
     const auto modifiers = key.getModifiers();
     const bool noAdditionalModifiers = !modifiers.isShiftDown();
+#if JUCE_MAC
     const bool controlShortcut = modifiers.isCtrlDown() &&
         !modifiers.isCommandDown() && !modifiers.isAltDown() &&
         noAdditionalModifiers;
+#else
+    /* JUCE reports Ctrl as the command key on Windows and Linux, so the
+       macOS "Control but not Command" test would never match there. */
+    const bool controlShortcut = modifiers.isCtrlDown() &&
+        !modifiers.isAltDown() && noAdditionalModifiers;
+#endif
     const bool editShortcut = modifiers.isAltDown() &&
         !modifiers.isCommandDown() && !modifiers.isCtrlDown() &&
         noAdditionalModifiers;

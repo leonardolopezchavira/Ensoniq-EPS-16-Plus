@@ -264,7 +264,10 @@ int main(int argc, char **argv) {
     const juce::ModifierKeys commandShift(
         juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier);
     if (editor->keyPressed(juce::KeyPress('1')) ||
+#if JUCE_MAC
+        /* Elsewhere JUCE's command modifier is Ctrl, the CMD shortcut. */
         editor->keyPressed(juce::KeyPress('1', command, '1')) ||
+#endif
         editor->keyPressed(juce::KeyPress('A', command, 'A')) ||
         editor->keyPressed(juce::KeyPress('1', commandShift, '1')))
         return 25;
