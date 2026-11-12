@@ -1,5 +1,9 @@
+option(EPS16_BUILD_STANDALONE "Also build the EPS-16 Plus as a standalone application" ON)
 if(NOT APPLE AND NOT WIN32)
-  message(FATAL_ERROR "The EPS-16 Plus plug-in supports macOS and Windows only")
+  if(NOT EPS16_BUILD_STANDALONE)
+    message(FATAL_ERROR "The EPS-16 Plus plug-in supports macOS and Windows only")
+  endif()
+  message(STATUS "Non-macOS/Windows host: building the standalone application only")
 endif()
 
 set(EPS16_JUCE_DIR "${CMAKE_SOURCE_DIR}/work/deps/JUCE" CACHE PATH
@@ -185,8 +189,13 @@ endif()
 
 if(APPLE)
   set(EPS16_PLUGIN_FORMATS AU VST3)
-else()
+elseif(WIN32)
   set(EPS16_PLUGIN_FORMATS VST3)
+else()
+  set(EPS16_PLUGIN_FORMATS)
+endif()
+if(EPS16_BUILD_STANDALONE)
+  list(APPEND EPS16_PLUGIN_FORMATS Standalone)
 endif()
 
 juce_add_plugin(Eps16Plus
@@ -202,6 +211,8 @@ juce_add_plugin(Eps16Plus
   IS_MIDI_EFFECT FALSE
   EDITOR_WANTS_KEYBOARD_FOCUS TRUE
   COPY_PLUGIN_AFTER_BUILD FALSE
+  MICROPHONE_PERMISSION_ENABLED TRUE
+  MICROPHONE_PERMISSION_TEXT "The EPS-16 Plus samples audio from your input device."
 )
 
 target_sources(Eps16Plus PRIVATE
@@ -218,7 +229,9 @@ target_include_directories(Eps16Plus PRIVATE "${CMAKE_SOURCE_DIR}/native")
 target_link_libraries(Eps16Plus PRIVATE
   eps16_vst3_bridge
   eps16_probe_machine
+  juce::juce_audio_devices
   juce::juce_audio_processors
+  juce::juce_audio_utils
   juce::juce_cryptography
   juce::juce_gui_basics
   juce::juce_recommended_config_flags
@@ -255,7 +268,7 @@ if(WIN32)
     VERBATIM
     COMMENT "Creating verified ${EPS16_VST3_PACKAGE_PLATFORM} VST3 package"
   )
-else()
+elseif(APPLE)
 add_custom_target(eps16_vst3_package
   COMMAND "${CMAKE_COMMAND}"
           "-DSOURCE_BUNDLE=$<TARGET_BUNDLE_DIR:Eps16Plus_VST3>"
@@ -329,6 +342,40 @@ add_custom_target(eps16_au_package
 add_custom_target(eps16_plugin_packages
   DEPENDS eps16_vst3_package eps16_au_package
 )
+endif()
+
+if(EPS16_BUILD_STANDALONE)
+  if(APPLE)
+    if(CMAKE_OSX_ARCHITECTURES MATCHES "arm64" AND CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
+      set(EPS16_STANDALONE_PLATFORM "macOS-universal")
+    elseif(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
+      set(EPS16_STANDALONE_PLATFORM "macOS-x86_64")
+    else()
+      set(EPS16_STANDALONE_PLATFORM "macOS-arm64")
+    endif()
+    set(EPS16_STANDALONE_APP "$<TARGET_BUNDLE_DIR:Eps16Plus_Standalone>")
+  else()
+    if(WIN32)
+      set(EPS16_STANDALONE_PLATFORM "Windows-x64")
+    else()
+      set(EPS16_STANDALONE_PLATFORM "Linux-x64")
+    endif()
+    set(EPS16_STANDALONE_APP "$<TARGET_FILE:Eps16Plus_Standalone>")
+  endif()
+  add_custom_target(eps16_standalone_package
+    COMMAND "${CMAKE_COMMAND}"
+            "-DSOURCE_APP=${EPS16_STANDALONE_APP}"
+            "-DPACKAGE_DIR=${CMAKE_BINARY_DIR}/standalone-package"
+            "-DPLATFORM_LABEL=${EPS16_STANDALONE_PLATFORM}"
+            "-DARCHIVE_NAME=Ensoniq-EPS-16-Plus-${PROJECT_VERSION}-Standalone-${EPS16_STANDALONE_PLATFORM}.zip"
+            "-DRESOURCE_README=${CMAKE_CURRENT_SOURCE_DIR}/StandaloneResourceFolder-README.txt"
+            "-DTHIRD_PARTY_NOTICES=${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+            "-DJUCE_LICENSE=${EPS16_JUCE_DIR}/LICENSE.md"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/PackageStandalone.cmake"
+    DEPENDS Eps16Plus_Standalone
+    VERBATIM
+    COMMENT "Creating ${EPS16_STANDALONE_PLATFORM} standalone application package"
+  )
 endif()
 
 add_executable(eps16_vst3_bridge_test BridgeTest.cpp)

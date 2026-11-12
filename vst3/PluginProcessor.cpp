@@ -381,6 +381,16 @@ juce::File Eps16PlusProcessor::defaultResourceDirectory() {
     return bundle.getParentDirectory().getChildFile("EPS_files");
 }
 
+juce::File Eps16PlusProcessor::standaloneResourceDirectory() {
+#if JUCE_MAC
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("Application Support/Ensoniq EPS-16 Plus/EPS_files");
+#else
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("Ensoniq EPS-16 Plus/EPS_files");
+#endif
+}
+
 void Eps16PlusProcessor::refreshResourcePaths() {
     juce::Array<juce::File> directories;
     const auto addDirectory = [&directories](const juce::File &directory) {
@@ -388,14 +398,29 @@ void Eps16PlusProcessor::refreshResourcePaths() {
             directories.add(directory);
     };
     addDirectory(defaultResourceDirectory());
+    if (wrapperType == wrapperType_Standalone) {
+        /* The standalone application looks beside its executable (Windows,
+           Linux) or beside the .app bundle (macOS, covered above), then in a
+           per-user application-data folder. The plug-in locations below are
+           searched afterwards, so an existing AU/VST3 installation's
+           EPS_files folder is reused without copying anything. */
+        addDirectory(moduleFile().getParentDirectory().getChildFile("EPS_files"));
+        addDirectory(standaloneResourceDirectory());
+    }
 #if JUCE_MAC
     addDirectory(juce::File::getSpecialLocation(juce::File::userHomeDirectory)
                      .getChildFile("Library/Audio/Plug-Ins/VST3/EPS_files"));
     addDirectory(juce::File("/Library/Audio/Plug-Ins/VST3/EPS_files"));
+    addDirectory(juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                     .getChildFile("Library/Audio/Plug-Ins/Components/EPS_files"));
+    addDirectory(juce::File("/Library/Audio/Plug-Ins/Components/EPS_files"));
 #elif JUCE_WINDOWS
     addDirectory(juce::File::getSpecialLocation(
                      juce::File::commonApplicationDataDirectory)
                      .getChildFile("VST3/EPS_files"));
+    addDirectory(juce::File::getSpecialLocation(
+                     juce::File::globalApplicationsDirectory)
+                     .getChildFile("Common Files/VST3/EPS_files"));
 #endif
     if (directories.isEmpty()) return;
 

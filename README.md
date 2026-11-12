@@ -232,6 +232,47 @@ The resulting layout should be:
 The original EPS-16 Plus manual remains the reference for sampling,
 instruments, layers, wavesamples, loops and synthesis.
 
+## Standalone application
+
+This fork adds a standalone desktop application alongside the AU and VST3
+plug-ins, so the EPS-16 Plus can be played without a DAW. It is the same
+emulator and panel, wrapped in JUCE's standalone host.
+
+**Getting it.** Open the repository's **Actions** tab, choose the
+**Standalone app** workflow, open the latest successful run and download the
+artifact for your system (macOS universal, Windows x64 or Linux x64). Pushing
+a `v*` tag also attaches the ZIPs to that GitHub release.
+
+**Installing.**
+
+- **macOS:** copy `Ensoniq EPS-16 Plus.app` and the `EPS_files` folder
+  together into `/Applications`. The app is ad-hoc signed but not notarized,
+  so right-click → **Open** the first time, or run
+  `xattr -dr com.apple.quarantine "/Applications/Ensoniq EPS-16 Plus.app"`.
+- **Windows:** unpack the folder anywhere and keep
+  `Ensoniq EPS-16 Plus.exe` beside `EPS_files`. SmartScreen may warn because
+  the program is unsigned (More info → Run anyway).
+
+**ROM, KPC and OS files** are the same ones the plug-in uses. The app looks
+in `EPS_files` beside itself, then in a per-user folder
+(`~/Library/Application Support/Ensoniq EPS-16 Plus/EPS_files` on macOS,
+`%APPDATA%\Ensoniq EPS-16 Plus\EPS_files` on Windows), then in the
+existing AU/VST3 `EPS_files` locations, so an existing plug-in installation
+is picked up without copying anything. Restart the app after adding files.
+
+**Audio, MIDI and sampling.** Use **Options → Audio/MIDI Settings** to pick
+the audio interface, sample rate, buffer size and MIDI keyboard. To sample,
+enable the input channels there and untick **Mute audio input** (JUCE mutes
+the input by default to prevent microphone feedback). Without a host there is
+no DAW transport, so the sequencer runs from its internal clock or incoming
+MIDI clock, and only the Main stereo output is used (OEX buses are a plug-in
+feature).
+
+**State.** The complete machine (instruments, sample RAM, mounted disk) is
+saved when the app quits and restored at the next launch. **Options** also
+offers *Save current state…*, *Load a saved state…* and *Reset to default
+state* (a cold boot).
+
 ## Audio and MIDI
 
 Load the plug-in on a MIDI instrument track. MIDI notes 36–96 play the
@@ -435,6 +476,31 @@ ctest --test-dir work/vst3-build-high-sierra --output-on-failure
 
 The universal package target verifies both architectures and their deployment
 targets, signs both bundles and creates one AU + VST3 archive.
+
+### Standalone application
+
+The plug-in target also builds a JUCE standalone application
+(`EPS16_BUILD_STANDALONE`, on by default). On macOS a single universal build
+is enough:
+
+```sh
+cmake -S . -B work/standalone-build -G Ninja \
+  -DEPS16_BUILD_VST3=ON \
+  -DEPS16_JUCE_DIR="$PWD/work/deps/JUCE" \
+  -DCMAKE_BUILD_TYPE=Release \
+  "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+
+cmake --build work/standalone-build --target eps16_standalone_package -j 8
+```
+
+The same command without the two `CMAKE_OSX_*` options builds the Windows or
+Linux application (`-G "Visual Studio 17 2022" -A x64` on Windows). The
+package target writes
+`work/standalone-build/standalone-package/Ensoniq-EPS-16-Plus-<version>-Standalone-<platform>.zip`.
+On Linux, where the AU/VST3 plug-ins are not supported, only the standalone
+application is built. The `Standalone app` GitHub Actions workflow builds all
+three platforms on every push.
 
 ### Windows VST3
 
